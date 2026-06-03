@@ -1,0 +1,62 @@
+spring:
+  main:
+    banner-mode: off
+    web-application-type: none
+  application:
+    name: BizAgent
+  ai:
+    deepseek:
+      base-url: https://api.deepseek.com
+      api-key: sk-bb9d2badf4124140bebe8a2a007812b0
+      chat:
+        options:
+          model: deepseek-chat
+    openai:
+      base-url: https://api.aigocode.com
+      api-key: sk-bf230ef8079134416c892648aac7e86a419b790f55194a99163d2f62ea086a28
+      chat:
+        options:
+          model: gpt-5.4-mini
+#    mcp:
+#      client:
+#        enabled: true
+#        request-timeout: 120s
+#        type: ASYNC
+#        stdio:
+#          connections:
+#            filesystem:
+#              command: npx
+#              args:
+#                - "-y"
+#                - "@modelcontextprotocol/server-filesystem"
+#                - "/home/v1hz"
+    dashscope:
+      api-key: sk-5085c42587ce42da8ebb4e50eca8c289
+      embedding:
+        options:
+          model: text-embedding-v4
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/rag
+    username: postgres
+    password: postgres
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+
+kind: Application
+
+upload-dir: uploads
+
+# ACP WebSocket 端口（acp-mid 通过此端口连接）
+acp:
+  ws-port: 8081
+
+bizagent:
+  home-dir: .bizagent
+  session:
+    session-dir: sessions
+    index-file-name: sessions.json
+
