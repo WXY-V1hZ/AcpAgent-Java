@@ -32,7 +32,7 @@ public class AcpAgentConfig {
     }
 
     @Bean
-    public AcpAsyncAgent acpAgent(
+    public AcpAsyncAgent acpAsyncAgent(
             AcpAgentTransport transport,
             AcpAgent handlers
     ) {

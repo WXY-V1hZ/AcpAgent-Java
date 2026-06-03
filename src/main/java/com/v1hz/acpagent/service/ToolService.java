@@ -6,9 +6,9 @@ import com.agentclientprotocol.sdk.spec.AcpSchema.*;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.v1hz.acpagent.constants.enums.PermissionOptionEnum;
 import com.v1hz.acpagent.constants.enums.SessionUpdateEnum;
-import com.v1hz.acpagent.tool.BaseTool;
-import com.v1hz.acpagent.tool.BashTools;
-import com.v1hz.acpagent.tool.DateTimeTools;
+import com.v1hz.acpagent.tool.*;
+import com.v1hz.acpagent.tool.schema.input.BashInputSchema;
+import com.v1hz.acpagent.tool.schema.utils.SchemaParser;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -24,14 +24,19 @@ import java.util.stream.Collectors;
 @Service
 public class ToolService {
 
-    private final DateTimeTools dateTimeTools;
+    private final MiscTools miscTools;
     private final BashTools bashTools;
+    private final FileSystemTools fileSystemTools;
     private final ObjectProvider<AcpAsyncAgent> agentProvider;
+    private final SchemaParser schemaParser;
 
-    public ToolService(DateTimeTools dateTimeTools, BashTools bashTools, ObjectProvider<AcpAsyncAgent> agentProvider) {
-        this.dateTimeTools = dateTimeTools;
+    public ToolService(MiscTools miscTools, BashTools bashTools, FileSystemTools fileSystemTools,
+                       ObjectProvider<AcpAsyncAgent> agentProvider, SchemaParser schemaParser) {
+        this.miscTools = miscTools;
         this.bashTools = bashTools;
+        this.fileSystemTools = fileSystemTools;
         this.agentProvider = agentProvider;
+        this.schemaParser = schemaParser;
     }
 
     private static Set<String> allowedToolNames;
@@ -45,8 +50,9 @@ public class ToolService {
 
     public BaseTool[] getTools() {
         return new BaseTool[]{
-                dateTimeTools,
+                miscTools,
                 bashTools,
+                fileSystemTools,
         };
     }
 
@@ -55,8 +61,21 @@ public class ToolService {
         return Collections.unmodifiableSet(allowedToolNames);
     }
 
-    public ToolCallUpdateChain update(String sessionId, String toolCallId, String toolName, Object input) {
-        return new ToolCallUpdateChain(agentProvider.getObject(), sessionId, toolCallId, toolName, input);
+    /**
+     * 创建并应用工具特定配置的链。根据工具名解析参数并设置 title / kind。
+     * 新增工具的自定义配置在此处统一添加。
+     *
+     * @return 已配置的链，若参数解析失败则返回 null
+     */
+    public ToolCallUpdateChain createUpdateChain(String sessionId, String toolCallId, String toolName, String arguments) {
+        var chain = new ToolCallUpdateChain(agentProvider.getObject(), sessionId, toolCallId, toolName, arguments);
+        if ("executeBash".equals(toolName)) {
+            BashInputSchema input = schemaParser.parse(arguments, BashInputSchema.class);
+            if (input == null) return null;
+            chain.title(input.getCommand()).kind(AcpSchema.ToolKind.EXECUTE);
+        }
+        // 未来新增工具在此添加分支
+        return chain;
     }
 
     /**

@@ -51,7 +51,7 @@ public class AgentService {
     public String buildSystemPrompt(@NonNull String cwd) {
         return String.format("""
                         你是一个运行在终端的AI智能助手。你的运行环境如下：
-                        当前工作目录 {{cwd}}: %s
+                        当前工作目录的绝对路径 {{cwd}}: %s
                         """,
                 cwd
         );

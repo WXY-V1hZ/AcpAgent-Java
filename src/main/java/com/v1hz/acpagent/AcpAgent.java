@@ -12,11 +12,9 @@ import com.v1hz.acpagent.entity.Session;
 import com.v1hz.acpagent.service.AgentService;
 import com.v1hz.acpagent.service.ChatService;
 import com.v1hz.acpagent.service.SessionService;
+import com.v1hz.acpagent.service.SessionUpdateService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
 import org.springframework.context.annotation.Lazy;
@@ -39,6 +37,7 @@ public class AcpAgent {
     private final SessionService sessionService;
     private final AgentService agentService;
     private final AcpAsyncAgent acpAsyncAgent;
+    private final SessionUpdateService sessionUpdateService;
 
     /**
      * 按 sessionId 追踪 prompt 取消信号
@@ -46,11 +45,13 @@ public class AcpAgent {
     private final ConcurrentHashMap<String, Sinks.One<StopReason>> cancelSignals = new ConcurrentHashMap<>();
 
     public AcpAgent(ChatService chatService, SessionService sessionService,
-                    AgentService agentService, @Lazy AcpAsyncAgent acpAsyncAgent) {
+                    AgentService agentService, @Lazy AcpAsyncAgent acpAsyncAgent,
+                    SessionUpdateService sessionUpdateService) {
         this.chatService = chatService;
         this.sessionService = sessionService;
         this.agentService = agentService;
         this.acpAsyncAgent = acpAsyncAgent;
+        this.sessionUpdateService = sessionUpdateService;
     }
 
     public Mono<InitializeResponse> init(InitializeRequest request) {
@@ -95,44 +96,10 @@ public class AcpAgent {
             // 回放历史消息
             Collection<Checkpoint> checkpoints = agentService.getSessionCheckpoints(sessionId);
             if (checkpoints.isEmpty()) return response;
-            // 最新 checkpoint 包含全部累积消息
             Checkpoint latest = checkpoints.iterator().next();
             Object msgs = latest.getState().get("messages");
-            if (!(msgs instanceof List<?> msgList)) return response;
-            for (Object raw : msgList) {
-                if (raw instanceof UserMessage userMsg) {
-                    acpAsyncAgent.sendSessionUpdate(sessionId,
-                            new UserMessageChunk("user_message_chunk",
-                                    new TextContent(userMsg.getText()))).block();
-                } else if (raw instanceof AssistantMessage assistantMsg) {
-                    if (StringUtils.isNotEmpty(assistantMsg.getText())) {
-                        acpAsyncAgent.sendSessionUpdate(sessionId,
-                                new AgentMessageChunk("agent_message_chunk",
-                                        new TextContent(assistantMsg.getText()))).block();
-                    }
-                    if (assistantMsg.hasToolCalls()) {
-                        for (var toolCall : assistantMsg.getToolCalls()) {
-                            acpAsyncAgent.sendSessionUpdate(sessionId,
-                                    new ToolCallUpdateNotification("tool_call", toolCall.id(),
-                                            toolCall.name(), ToolKind.OTHER, ToolCallStatus.PENDING,
-                                            null, null, toolCall.arguments(), null, null)).block();
-                            acpAsyncAgent.sendSessionUpdate(sessionId,
-                                    new ToolCallUpdateNotification("tool_call_update", toolCall.id(),
-                                            toolCall.name(), ToolKind.OTHER, ToolCallStatus.IN_PROGRESS,
-                                            null, null, toolCall.arguments(), null, null)).block();
-                        }
-                    }
-                } else if (raw instanceof ToolResponseMessage toolMsg) {
-                    for (var resp : toolMsg.getResponses()) {
-                        acpAsyncAgent.sendSessionUpdate(sessionId,
-                                new ToolCallUpdateNotification("tool_call_update",
-                                        resp.id(), resp.name(),
-                                        ToolKind.OTHER, ToolCallStatus.COMPLETED,
-                                        List.of(new ToolCallContentBlock("content",
-                                                new TextContent(resp.responseData()))),
-                                        null, null, null, null)).block();
-                    }
-                }
+            if (msgs instanceof List<?> msgList) {
+                sessionUpdateService.replayMessages(sessionId, msgList);
             }
             return response;
         }).subscribeOn(Schedulers.boundedElastic());

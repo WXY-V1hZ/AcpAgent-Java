@@ -1,10 +1,7 @@
 package com.v1hz.acpagent.interceptor;
 
-import com.agentclientprotocol.sdk.spec.AcpSchema;
 import com.alibaba.cloud.ai.graph.agent.interceptor.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.v1hz.acpagent.service.ToolService;
-import com.v1hz.acpagent.tool.schema.input.BashInputSchema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -23,8 +20,6 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ToolStatusInterceptor extends ToolInterceptor {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
     private final ToolService toolService;
 
     @Override
@@ -42,14 +37,9 @@ public class ToolStatusInterceptor extends ToolInterceptor {
                 .flatMap(ToolCallExecutionContext::threadId)
                 .orElseThrow();
 
-        var chain = toolService.update(sessionId, toolCallId, toolName, arguments);
-
-        if ("executeBash".equals(toolName)) {
-            BashInputSchema input = parseInput(arguments);
-            if (input == null) {
-                return ToolCallResponse.error(toolCallId, toolName, "无法解析工具参数");
-            }
-            chain.title(input.getCommand()).kind(AcpSchema.ToolKind.EXECUTE);
+        var chain = toolService.createUpdateChain(sessionId, toolCallId, toolName, arguments);
+        if (chain == null) {
+            return ToolCallResponse.error(toolCallId, toolName, "无法解析工具参数");
         }
 
         ToolCallResponse denied = chain.pending().check();
@@ -58,19 +48,5 @@ public class ToolStatusInterceptor extends ToolInterceptor {
         ToolCallResponse result = handler.call(request);
         chain.completed(result.getResult());
         return result;
-    }
-
-    /** 从 {@code {"bashInputSchema": {...}}} 中还原参数对象。 */
-    private BashInputSchema parseInput(String arguments) {
-        if (arguments == null || arguments.isEmpty()) return null;
-        try {
-            var root = objectMapper.readTree(arguments);
-            var inputNode = root.get("bashInputSchema");
-            if (inputNode == null) return null;
-            return objectMapper.treeToValue(inputNode, BashInputSchema.class);
-        } catch (Exception e) {
-            log.warn("Failed to parse tool arguments: {}", arguments, e);
-            return null;
-        }
     }
 }
