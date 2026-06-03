@@ -3,7 +3,7 @@ spring:
     banner-mode: off
     web-application-type: none
   application:
-    name: BizAgent
+    name: AcpAgent
   ai:
     deepseek:
       base-url: https://api.deepseek.com
@@ -38,24 +38,22 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: true
-  datasource:
-    url: jdbc:postgresql://localhost:5432/rag
-    username: postgres
-    password: postgres
+#  datasource:
+#    url: jdbc:postgresql://localhost:5432/rag
+#    username: postgres
+#    password: postgres
   autoconfigure:
     exclude:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
 
-kind: Application
-
-upload-dir: uploads
+#upload-dir: uploads
 
 # ACP WebSocket 端口（acp-mid 通过此端口连接）
 acp:
   ws-port: 8081
 
-bizagent:
-  home-dir: .bizagent
+acpagent:
+  home-dir: .acpagent
   session:
     session-dir: sessions
     index-file-name: sessions.json

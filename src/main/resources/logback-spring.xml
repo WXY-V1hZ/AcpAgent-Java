@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <springProperty scope="context" name="ACPAGENT_HOME" source="acpagent.home-dir"/>
+
     <!-- 所有日志输出到 stderr，避免污染 stdout（stdio 模式必须） -->
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.err</target>
@@ -10,10 +12,10 @@
 
     <!-- 文件日志，每次启动清空旧日志，滚动保留 7 天 -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${user.home}/.bizagent/log/bizagent.log</file>
+        <file>${user.home}/${ACPAGENT_HOME}/log/acpagent.log</file>
         <append>false</append>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${user.home}/.bizagent/log/bizagent.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>${user.home}/${ACPAGENT_HOME}/log/acpagent.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxHistory>7</maxHistory>
             <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
                 <maxFileSize>100MB</maxFileSize>

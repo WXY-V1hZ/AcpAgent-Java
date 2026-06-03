@@ -40,7 +40,7 @@ dependencies {
 
 group = "com.v1hz"
 version = "0.0.1-SNAPSHOT"
-description = "BizAgent"
+description = "AcpAgent"
 
 plugins {
     java
@@ -55,7 +55,7 @@ repositories {
 }
 
 application {
-    mainClass = "com.v1hz.bizagent.BizAgentApplication"
+    mainClass = "com.v1hz.acpagnet.AcpAgentApplication"
 }
 
 java {
