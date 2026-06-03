@@ -1,95 +1,16 @@
 # 关于本项目
 
-目录结构：
-
-> 注意：每次修改后都要同步下面的目录结构
-
-```
-BizAgent/
-├── src/main/java/com/v1hz/bizagent/
-│   ├── BizAcpAgent.java          # ACP 协议核心 handler（init/prompt/cancel 等）
-│   ├── config/
-│   │   └── AcpAgentConfig.java    # ACP agent 传输层配置（WebSocket/stdio）
-│   ├── service/
-│   │   ├── AgentService.java      # ReactAgent 构建 + 工具注册 + 拦截器装配
-│   │   ├── ChatService.java       # Agent 流式对话核心
-│   │   ├── SessionService.java    # Session CRUD
-│   │   └── ToolService.java       # 工具注册中心 + ToolCallUpdateChain（ACP 通知链）
-│   ├── tool/
-│   │   ├── BaseTool.java          # 工具接口（定义 getAllowedToolNames）
-│   │   ├── BashTools.java         # Bash 命令执行（对接 ACP 终端协议）
-│   │   ├── FileSystemTools.java   # 文件读写搜索
-│   │   └── DateTimeTools.java     # 时间日期
-│   │   └── schema/input/
-│   │       └── BashInputSchema.java # Bash 工具入参（command + timeoutSeconds）
-│   ├── interceptor/
-│   │   └── ToolStatusInterceptor.java  # 工具状态通知 + 权限检查（PENDING → check → IN_PROGRESS → 执行 → COMPLETED）
-│   ├── component/
-│   │   └── DeepSeekChatModel.java # DeepSeek 自定义 ChatModel
-│   ├── entity/
-│   │   └── Session.java           # 会话实体（含 cwd 等字段）
-│   ├── constants/
-│   │   ├── AcpConstants.java      # ACP 常量
-│   │   └── enums/
-│   │       ├── PermissionOptionEnum.java  # 权限选项枚举
-│   │       ├── SessionModeEnum.java       # 会话模式
-│   │       ├── SessionModelEnum.java      # 模型枚举
-│   │       ├── SessionStatusEnum.java     # 会话状态
-│   │       └── SessionUpdateEnum.java     # ACP 更新类型
-│   ├── dto/                       # DTO / 响应结构
-│   ├── exception/                 # 业务异常
-│   └── repository/                # 数据访问
-├── acp/
-│   ├── java-sdk/                  # ACP Java SDK（本地源码依赖）
-│   ├── agent-client-protocol/     # ACP 协议规范（JSON Schema）
-│   └── acp-java-tutorial/         # ACP Java 教程示例
-├── docs/
-│   ├── spring-ai/                 # Spring AI 文档
-│   └── spring-ai-alibaba/         # Spring AI Alibaba 文档
-└── AGENTS.md                      # 本文件
-```
-
-我正在使用 spring-ai 实现一个 agent
-
-我的计划是根据 ACP 协议，实现一个完整对接 ACP 的 agent
-
-# 待办
-
-- [x] 实现 session 管理
-  - [x] 新建 new
-  - [x] 列表 list
-  - [x] 加载 load
-  - [x] 恢复 resume
-  - [x] 关闭 close
-  - [x] 取消 cancel
-- [x] 正确处理agent的流式回答
-  - [x] 思考
-  - [x] 回答
-  - [x] 工具调用
-- [x] 工具
-  - [x] 请求工具调用权限
-  - [x] 终端命令
-  - [x] 文件增删改查
-  - [x] 白名单 / 权限分级
-- [x] 切换模型
-- [ ] 上下文工程
-  - [x] 注入 session 的 cwd 到系统提示词
-  - [x] 工具执行时自动使用 session cwd
-  - [ ] 根据模式定制系统提示词
-  - [ ] 记忆管理
-- [ ] MCP 服务
-- [ ] harness 工程
-  - [ ] skills
-  - [ ] AGENT.md
-- [ ] 处理用户的消息附件
+参阅 [README](README.md)
 
 # 可以查阅的文档
 
 - `docs/spring-ai/` — Spring AI 框架文档
 - `docs/spring-ai-alibaba/` — Spring AI Alibaba 框架文档
-- `acp/java-sdk/` — ACP Java SDK 源码
-- `acp/agent-client-protocol/` — ACP 协议规范（包含文档和源码）
+- `docs/agent-client-protocol/` — ACP 协议文档
+- `sdk-ref/opencode/` — OpenCode 参考实现（TypeScript），用于工具设计与 ACP 集成参考
 - `AGENTS.md` - 本文档，用于了解本项目和编码规范
+
+- `sdk-ref/java-sdk` - ACP 的 JavaSDK
 
 # 编码约定
 
@@ -133,7 +54,7 @@ if (condition) {
 ## 控制流
 
 - 避免 `else` 语句，优先采用早返回模式。
-- 尽可能减少缩进，增强可读性
+- 尽可能减少缩进。
 
 ```java
 // 好
@@ -186,3 +107,32 @@ private Metadata readMetadata(Object input) { ... }
 
 - 每次编码，都应该保证有完整、易懂、易读的注释
 - 修改代码后也要注意修改对应的注释
+
+# 项目架构模式
+
+## ACP 工具通知链
+
+所有工具调用通过 `ToolStatusInterceptor` 统一管理 ACP 通知：
+
+1. `ToolService.createUpdateChain(sessionId, toolCallId, toolName, arguments)` — 根据工具名解析入参，设置 title/kind/locations/diffs
+2. 链式发送：`pending()` → `check()` → `inProgress()` → 执行 → `completed()` / `failed()`
+
+新增工具只需要：
+- 创建 `XxxInputSchema` 类（`tool/schema/input/` 下）
+- 创建工具实现类实现 `BaseTool` 接口
+- 在 `ToolService.createUpdateChain()` 的 switch 中添加分支
+- 在 `ToolService.getTools()` 中注册
+
+## 工具入参设计
+
+所有工具使用 `XxxInputSchema` 作为唯一入参（通过 `@ToolParam` 注解），遵循 `BashInputSchema` 命名模式。`ToolService.createUpdateChain` 通过 `SchemaParser.parse(arguments, XxxInputSchema.class)` 解析参数，从中提取 filePath、oldContent、newContent 等字段设置 ACP 通知的 locations 和 diff 内容。
+
+## ACP 通知内容类型
+
+| 工具类型 | content | 来源 |
+|---------|---------|------|
+| executeBash | ToolCallTerminal | 运行结果（截断 10K） |
+| writeFile/editFile | ToolCallDiff | createUpdateChain 中从 schema + 磁盘旧内容构造 |
+| readFile/listDirectory/其他 | ToolCallContentBlock (TextContent) | 运行结果（截断 50K） |
+
+`content` 和 `locations` 字段帮助客户端在 IDE 中高亮文件并展示变更 diff。
