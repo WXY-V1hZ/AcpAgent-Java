@@ -17,19 +17,19 @@ spring:
       chat:
         options:
           model: gpt-5.4-mini
-#    mcp:
-#      client:
-#        enabled: true
-#        request-timeout: 120s
-#        type: ASYNC
-#        stdio:
-#          connections:
-#            filesystem:
-#              command: npx
-#              args:
-#                - "-y"
-#                - "@modelcontextprotocol/server-filesystem"
-#                - "/home/v1hz"
+    #    mcp:
+    #      client:
+    #        enabled: true
+    #        request-timeout: 120s
+    #        type: ASYNC
+    #        stdio:
+    #          connections:
+    #            filesystem:
+    #              command: npx
+    #              args:
+    #                - "-y"
+    #                - "@modelcontextprotocol/server-filesystem"
+    #                - "/home/v1hz"
     dashscope:
       api-key: sk-5085c42587ce42da8ebb4e50eca8c289
       embedding:
@@ -38,10 +38,10 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: true
-#  datasource:
-#    url: jdbc:postgresql://localhost:5432/rag
-#    username: postgres
-#    password: postgres
+  #  datasource:
+  #    url: jdbc:postgresql://localhost:5432/rag
+  #    username: postgres
+  #    password: postgres
   autoconfigure:
     exclude:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration

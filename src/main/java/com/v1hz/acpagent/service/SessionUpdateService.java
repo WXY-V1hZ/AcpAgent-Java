@@ -1,7 +1,9 @@
 package com.v1hz.acpagent.service;
 
 import com.agentclientprotocol.sdk.agent.AcpAsyncAgent;
-import com.agentclientprotocol.sdk.spec.AcpSchema.*;
+import com.agentclientprotocol.sdk.spec.AcpSchema.AgentMessageChunk;
+import com.agentclientprotocol.sdk.spec.AcpSchema.TextContent;
+import com.agentclientprotocol.sdk.spec.AcpSchema.UserMessageChunk;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -26,7 +28,9 @@ public class SessionUpdateService {
         this.toolService = toolService;
     }
 
-    /** 将历史消息列表逐条回放到 ACP 会话。 */
+    /**
+     * 将历史消息列表逐条回放到 ACP 会话。
+     */
     public void replayMessages(String sessionId, List<?> messages) {
         Map<String, ToolService.ToolCallUpdateChain> chains = new HashMap<>();
         for (Object raw : messages) {

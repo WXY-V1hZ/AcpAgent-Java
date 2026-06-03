@@ -6,16 +6,23 @@ import com.agentclientprotocol.sdk.spec.AcpSchema.*;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.v1hz.acpagent.constants.enums.PermissionOptionEnum;
 import com.v1hz.acpagent.constants.enums.SessionUpdateEnum;
-import com.v1hz.acpagent.tool.*;
-import com.v1hz.acpagent.tool.schema.input.BashInputSchema;
+import com.v1hz.acpagent.tool.BaseTool;
+import com.v1hz.acpagent.tool.BashTools;
+import com.v1hz.acpagent.tool.FileSystemTools;
+import com.v1hz.acpagent.tool.MiscTools;
+import com.v1hz.acpagent.tool.schema.input.*;
 import com.v1hz.acpagent.tool.schema.utils.SchemaParser;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -24,6 +31,7 @@ import java.util.stream.Collectors;
 @Service
 public class ToolService {
 
+    private static Set<String> allowedToolNames;
     private final MiscTools miscTools;
     private final BashTools bashTools;
     private final FileSystemTools fileSystemTools;
@@ -38,8 +46,6 @@ public class ToolService {
         this.agentProvider = agentProvider;
         this.schemaParser = schemaParser;
     }
-
-    private static Set<String> allowedToolNames;
 
     @PostConstruct
     public void init() {
@@ -56,11 +62,6 @@ public class ToolService {
         };
     }
 
-    public Set<String> getAllowedToolNames() {
-        // 返回不可变视图，防止外部修改缓存
-        return Collections.unmodifiableSet(allowedToolNames);
-    }
-
     /**
      * 创建并应用工具特定配置的链。根据工具名解析参数并设置 title / kind。
      * 新增工具的自定义配置在此处统一添加。
@@ -69,12 +70,55 @@ public class ToolService {
      */
     public ToolCallUpdateChain createUpdateChain(String sessionId, String toolCallId, String toolName, String arguments) {
         var chain = new ToolCallUpdateChain(agentProvider.getObject(), sessionId, toolCallId, toolName, arguments);
-        if ("executeBash".equals(toolName)) {
-            BashInputSchema input = schemaParser.parse(arguments, BashInputSchema.class);
-            if (input == null) return null;
-            chain.title(input.getCommand()).kind(AcpSchema.ToolKind.EXECUTE);
+        switch (toolName) {
+            case "executeBash" -> {
+                BashInputSchema input = schemaParser.parse(arguments, BashInputSchema.class);
+                if (input == null) return null;
+                chain.title(input.getCommand())
+                        .kind(ToolKind.EXECUTE)
+                        .input(input);
+            }
+            case "readFile" -> {
+                ReadInputSchema input = schemaParser.parse(arguments, ReadInputSchema.class);
+                if (input == null) return null;
+                chain.location(input.getFilePath())
+                        .kind(ToolKind.READ)
+                        .title(toolName + ": " + input.getFilePath())
+                        .input(input);
+            }
+            case "writeFile" -> {
+                WriteInputSchema input = schemaParser.parse(arguments, WriteInputSchema.class);
+                if (input == null) return null;
+                chain.location(input.getFilePath())
+                        .kind(AcpSchema.ToolKind.EDIT)
+                        .title(toolName + ": " + input.getFilePath())
+                        .input(input);
+                try {
+                    Path path = Paths.get(input.getFilePath());
+                    String oldText = Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "";
+                    chain.diff(input.getFilePath(), oldText, input.getContent());
+                } catch (IOException e) {
+                    log.warn("Failed to read old content for diff: {}", input.getFilePath(), e);
+                }
+            }
+            case "editFile" -> {
+                EditInputSchema input = schemaParser.parse(arguments, EditInputSchema.class);
+                if (input == null) return null;
+                chain.location(input.getFilePath())
+                        .kind(ToolKind.EDIT)
+                        .diff(input.getFilePath(), input.getOldContent(), input.getNewContent())
+                        .title(toolName + ": " + input.getFilePath())
+                        .input(input);
+            }
+            case "listDirectory" -> {
+                ListDirectoryInputSchema input = schemaParser.parse(arguments, ListDirectoryInputSchema.class);
+                if (input == null) return null;
+                chain.location(input.getPath())
+                        .kind(ToolKind.SEARCH)
+                        .title(toolName + ": " + input.getPath())
+                        .input(input);
+            }
         }
-        // 未来新增工具在此添加分支
         return chain;
     }
 
@@ -92,8 +136,10 @@ public class ToolService {
         private final String toolCallId;
         private final String toolName;
         private String title;
-        private final Object input;
+        private Object input;
         private AcpSchema.ToolKind kind;
+        private List<ToolCallLocation> locations;
+        private List<ToolCallContent> diffs;
 
         ToolCallUpdateChain(AcpAsyncAgent agent, String sessionId, String toolCallId, String toolName, Object input) {
             this.agent = agent;
@@ -105,15 +151,43 @@ public class ToolService {
             this.kind = AcpSchema.ToolKind.OTHER;
         }
 
-        /** 设置通知标题，默认取工具名。 */
+        /**
+         * 设置通知标题，默认取工具名。
+         */
+        public ToolCallUpdateChain input(Object input) {
+            this.input = input;
+            return this;
+        }
+
+        /**
+         * 设置通知标题，默认取工具名。
+         */
         public ToolCallUpdateChain title(String title) {
             this.title = title;
             return this;
         }
 
-        /** 设置工具类型，默认 {@link AcpSchema.ToolKind#OTHER}。 */
+        /**
+         * 设置工具类型，默认 {@link AcpSchema.ToolKind#OTHER}。
+         */
         public ToolCallUpdateChain kind(AcpSchema.ToolKind kind) {
             this.kind = kind;
+            return this;
+        }
+
+        /**
+         * 标记工具操作的目标文件位置，客户端可高亮该文件。
+         */
+        public ToolCallUpdateChain location(String filePath) {
+            this.locations = List.of(new ToolCallLocation(filePath, null));
+            return this;
+        }
+
+        /**
+         * 便捷方法：添加一个文件 diff（旧 → 新）。
+         */
+        public ToolCallUpdateChain diff(String filePath, String oldText, String newText) {
+            this.diffs = List.of(new ToolCallDiff("diff", filePath, oldText, newText));
             return this;
         }
 
@@ -156,19 +230,25 @@ public class ToolService {
             return ToolCallResponse.error(toolCallId, toolName, "操作被拒绝");
         }
 
-        /** 发送 PENDING 状态通知。 */
+        /**
+         * 发送 PENDING 状态通知。
+         */
         public ToolCallUpdateChain pending() {
             send(AcpSchema.ToolCallStatus.PENDING, null);
             return this;
         }
 
-        /** 发送 IN_PROGRESS 状态通知。 */
+        /**
+         * 发送 IN_PROGRESS 状态通知。
+         */
         public ToolCallUpdateChain inProgress() {
             send(AcpSchema.ToolCallStatus.IN_PROGRESS, null);
             return this;
         }
 
-        /** 发送 COMPLETED 状态通知并携带执行结果。 */
+        /**
+         * 发送 COMPLETED 状态通知并携带执行结果。
+         */
         public void completed(String result) {
             send(AcpSchema.ToolCallStatus.COMPLETED, result);
         }
@@ -181,8 +261,8 @@ public class ToolService {
                             title,
                             kind,
                             status,
-                            null,
-                            null,
+                            diffs,
+                            locations,
                             input,
                             result,
                             null
@@ -190,7 +270,10 @@ public class ToolService {
             ).block();
         }
 
-        private void failed() {
+        /**
+         * 发送 FAILED 状态通知。
+         */
+        public void failed() {
             try {
                 send(AcpSchema.ToolCallStatus.FAILED, null);
             } catch (Exception e) {

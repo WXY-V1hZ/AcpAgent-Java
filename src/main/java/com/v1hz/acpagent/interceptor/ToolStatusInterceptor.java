@@ -1,6 +1,7 @@
 package com.v1hz.acpagent.interceptor;
 
 import com.alibaba.cloud.ai.graph.agent.interceptor.*;
+import com.v1hz.acpagent.service.CancellationService;
 import com.v1hz.acpagent.service.ToolService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,17 +11,20 @@ import org.springframework.stereotype.Component;
  * 工具状态拦截器 — 按工具名分支处理，统一管理 ACP 状态通知与权限检查。
  * <p>
  * <ul>
- *   <li>{@code executeBash} — 解析参数，以命令原文为标题，标记 {@link AcpSchema.ToolKind#EXECUTE}</li>
- *   <li>其他工具 — 使用原始参数，默认标题和 {@link AcpSchema.ToolKind#OTHER}</li>
  * </ul>
  * 公共流程：PENDING → check 权限 → IN_PROGRESS → 执行 → COMPLETED
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ToolStatusInterceptor extends ToolInterceptor {
 
     private final ToolService toolService;
+    private final CancellationService cancellationService;
+
+    public ToolStatusInterceptor(ToolService toolService, CancellationService cancellationService) {
+        this.toolService = toolService;
+        this.cancellationService = cancellationService;
+    }
 
     @Override
     public String getName() {
@@ -45,8 +49,22 @@ public class ToolStatusInterceptor extends ToolInterceptor {
         ToolCallResponse denied = chain.pending().check();
         if (denied != null) return denied;
         chain.inProgress();
-        ToolCallResponse result = handler.call(request);
-        chain.completed(result.getResult());
-        return result;
+        if (cancellationService.isCancelled(sessionId)) {
+            log.warn("Tool execution cancelled: {}", toolName);
+            chain.failed();
+            return ToolCallResponse.error(toolCallId, toolName, "Session was cancelled");
+        }
+        cancellationService.registerThread(sessionId);
+        try {
+            ToolCallResponse result = handler.call(request);
+            chain.completed(result.getResult());
+            return result;
+        } catch (Exception e) {
+            log.error("Tool execution failed: {}", toolName, e);
+            chain.failed();
+            return ToolCallResponse.error(toolCallId, toolName, e.getMessage());
+        } finally {
+            cancellationService.unregisterThread(sessionId);
+        }
     }
 }

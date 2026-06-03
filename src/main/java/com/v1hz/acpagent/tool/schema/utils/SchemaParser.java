@@ -2,6 +2,7 @@ package com.v1hz.acpagent.tool.schema.utils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -10,6 +11,7 @@ public class SchemaParser {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Nullable
     public <T> T parse(String arguments, Class<T> type) {
         if (arguments == null || arguments.isEmpty()) return null;
         try {

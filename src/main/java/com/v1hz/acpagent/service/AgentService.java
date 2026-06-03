@@ -28,13 +28,11 @@ import java.util.Collection;
 public class AgentService {
 
     private final ToolService toolService;
+    private final ToolStatusInterceptor toolStatusInterceptor;
     @Value("${spring.ai.deepseek.api-key}")
     String apiKey;
     @Value("${acpagent.home-dir}")
     String homeDir;
-
-    private final ToolStatusInterceptor toolStatusInterceptor;
-
     private BaseCheckpointSaver saver;
 
     @PostConstruct

@@ -10,6 +10,7 @@ import com.v1hz.acpagent.constants.AcpConstants;
 import com.v1hz.acpagent.constants.enums.SessionStatusEnum;
 import com.v1hz.acpagent.entity.Session;
 import com.v1hz.acpagent.service.AgentService;
+import com.v1hz.acpagent.service.CancellationService;
 import com.v1hz.acpagent.service.ChatService;
 import com.v1hz.acpagent.service.SessionService;
 import com.v1hz.acpagent.service.SessionUpdateService;
@@ -38,6 +39,7 @@ public class AcpAgent {
     private final AgentService agentService;
     private final AcpAsyncAgent acpAsyncAgent;
     private final SessionUpdateService sessionUpdateService;
+    private final CancellationService cancellationService;
 
     /**
      * 按 sessionId 追踪 prompt 取消信号
@@ -46,12 +48,14 @@ public class AcpAgent {
 
     public AcpAgent(ChatService chatService, SessionService sessionService,
                     AgentService agentService, @Lazy AcpAsyncAgent acpAsyncAgent,
-                    SessionUpdateService sessionUpdateService) {
+                    SessionUpdateService sessionUpdateService,
+                    CancellationService cancellationService) {
         this.chatService = chatService;
         this.sessionService = sessionService;
         this.agentService = agentService;
         this.acpAsyncAgent = acpAsyncAgent;
         this.sessionUpdateService = sessionUpdateService;
+        this.cancellationService = cancellationService;
     }
 
     public Mono<InitializeResponse> init(InitializeRequest request) {
@@ -158,7 +162,9 @@ public class AcpAgent {
 
     public Mono<Void> cancel(CancelNotification notification) {
         log.info("收到取消对话通知：{}", notification);
-        cancelSession(notification.sessionId());
+        String sessionId = notification.sessionId();
+        cancellationService.cancel(sessionId);
+        cancelSession(sessionId);
         return Mono.empty();
     }
 
@@ -203,7 +209,10 @@ public class AcpAgent {
                         Mono.just(StopReason.END_TURN)
                 )))
                 .map(PromptResponse::new)
-                .doFinally(sig -> cancelSignals.remove(sessionId));
+                .doFinally(sig -> {
+                    cancelSignals.remove(sessionId);
+                    cancellationService.clear(sessionId);
+                });
     }
 
     private void cancelSession(String sessionId) {

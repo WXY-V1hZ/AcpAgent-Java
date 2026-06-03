@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -25,7 +26,7 @@ public class AcpAgentApplication {
             // Spring 可能未启动，无法使用 @Value；直接硬编码，与 acpagent.home-dir 保持一致
             Path logDir = Path.of(System.getProperty("user.home"), ".acpagent", "log");
             Files.createDirectories(logDir);
-            try (PrintWriter pw = new PrintWriter(logDir.resolve("error").toFile(), "UTF-8")) {
+            try (PrintWriter pw = new PrintWriter(logDir.resolve("error").toFile(), StandardCharsets.UTF_8)) {
                 pw.println("=== AcpAgent Crash Report ===");
                 pw.println("Time: " + LocalDateTime.now());
                 pw.println();

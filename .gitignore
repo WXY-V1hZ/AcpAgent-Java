@@ -39,5 +39,5 @@ uploads/
 .vscode/
 
 *.log
-acp/
+sdk-ref/
 docs/

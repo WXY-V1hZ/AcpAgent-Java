@@ -7,6 +7,7 @@ import com.v1hz.acpagent.entity.Session;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
 
 import java.io.File;
@@ -16,13 +17,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.lang.Nullable;
 
 @Slf4j
 @Repository
 public class SessionRepository {
 
-    private static final TypeReference<List<SessionIndexItem>> INDEX_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<SessionIndexItem>> INDEX_TYPE = new TypeReference<>() {
+    };
 
     private final Path storeDir;
     private final Path indexFile;
@@ -90,8 +91,6 @@ public class SessionRepository {
 
     // ========== 索引管理 ==========
 
-    private record SessionIndexItem(String sessionId, String title, String cwd, String updatedAt) {}
-
     private synchronized void updateIndex(Session session) {
         List<SessionIndexItem> index = readIndex();
         // 替换或新增
@@ -150,5 +149,8 @@ public class SessionRepository {
         } catch (IOException e) {
             log.error("Failed to write session index", e);
         }
+    }
+
+    private record SessionIndexItem(String sessionId, String title, String cwd, String updatedAt) {
     }
 }

@@ -26,7 +26,7 @@ public class LoadSessionTest {
         // 最新 checkpoint 包含全部累积消息
         Checkpoint latest = checkpoints.iterator().next();
         Object msgs = latest.getState().get("messages");
-        if (!(msgs instanceof List<?> msgList)) return ;
+        if (!(msgs instanceof List<?> msgList)) return;
         for (Object raw : msgList) {
             if (raw instanceof UserMessage userMsg) {
                 log.info(userMsg.toString());

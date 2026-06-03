@@ -20,10 +20,6 @@ public enum SessionModelEnum {
     private final String modelName;
     private final String description;
 
-    public ModelInfo toModelInfo() {
-        return new ModelInfo(id, modelName, description);
-    }
-
     public static boolean isValid(String id) {
         return Arrays.stream(values()).anyMatch(m -> m.id.equals(id));
     }
@@ -31,5 +27,9 @@ public enum SessionModelEnum {
     @NonNull
     public static Optional<SessionModelEnum> fromId(@NonNull String id) {
         return Arrays.stream(values()).filter(m -> m.id.equals(id)).findFirst();
+    }
+
+    public ModelInfo toModelInfo() {
+        return new ModelInfo(id, modelName, description);
     }
 }

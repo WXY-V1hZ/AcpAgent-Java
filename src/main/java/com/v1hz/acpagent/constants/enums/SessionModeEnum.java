@@ -21,10 +21,6 @@ public enum SessionModeEnum {
     private final String id;
     private final String description;
 
-    public AcpSchema.SessionMode toSessionMode() {
-        return new AcpSchema.SessionMode(id, id, description);
-    }
-
     public static boolean isValid(String id) {
         return Arrays.stream(values()).anyMatch(m -> m.id.equals(id));
     }
@@ -32,5 +28,9 @@ public enum SessionModeEnum {
     @NonNull
     public static Optional<SessionModeEnum> fromId(@NonNull String id) {
         return Arrays.stream(values()).filter(m -> m.id.equals(id)).findFirst();
+    }
+
+    public AcpSchema.SessionMode toSessionMode() {
+        return new AcpSchema.SessionMode(id, id, description);
     }
 }

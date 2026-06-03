@@ -16,41 +16,25 @@
 
 package com.v1hz.acpagent.component;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
 import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
-import org.springframework.ai.deepseek.DeepSeekChatOptions;
-import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
-
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
-import org.springframework.ai.chat.metadata.ChatResponseMetadata;
-import org.springframework.ai.chat.metadata.DefaultUsage;
-import org.springframework.ai.chat.metadata.EmptyUsage;
-import org.springframework.ai.chat.metadata.Usage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.model.MessageAggregator;
-import org.springframework.ai.chat.model.StreamingChatModel;
+import org.springframework.ai.chat.metadata.*;
+import org.springframework.ai.chat.model.*;
 import org.springframework.ai.chat.observation.ChatModelObservationContext;
 import org.springframework.ai.chat.observation.ChatModelObservationConvention;
 import org.springframework.ai.chat.observation.ChatModelObservationDocumentation;
 import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
+import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.deepseek.api.DeepSeekApi;
 import org.springframework.ai.deepseek.api.DeepSeekApi.ChatCompletion;
 import org.springframework.ai.deepseek.api.DeepSeekApi.ChatCompletion.Choice;
@@ -60,11 +44,7 @@ import org.springframework.ai.deepseek.api.DeepSeekApi.ChatCompletionMessage.Too
 import org.springframework.ai.deepseek.api.DeepSeekApi.ChatCompletionRequest;
 import org.springframework.ai.deepseek.api.common.DeepSeekConstants;
 import org.springframework.ai.model.ModelOptionsUtils;
-import org.springframework.ai.model.tool.DefaultToolExecutionEligibilityPredicate;
-import org.springframework.ai.model.tool.ToolCallingChatOptions;
-import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.model.tool.ToolExecutionEligibilityPredicate;
-import org.springframework.ai.model.tool.ToolExecutionResult;
+import org.springframework.ai.model.tool.*;
 import org.springframework.ai.model.tool.internal.ToolCallReactiveContextHolder;
 import org.springframework.ai.retry.RetryUtils;
 import org.springframework.ai.support.UsageCalculator;
@@ -73,6 +53,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * {@link ChatModel} and {@link StreamingChatModel} implementation for {@literal DeepSeek}
@@ -82,233 +69,229 @@ import org.springframework.util.CollectionUtils;
  */
 public class DeepSeekChatModel implements ChatModel {
 
-	private static final Logger logger = LoggerFactory.getLogger(DeepSeekChatModel.class);
+    private static final Logger logger = LoggerFactory.getLogger(DeepSeekChatModel.class);
 
-	private static final ChatModelObservationConvention DEFAULT_OBSERVATION_CONVENTION = new DefaultChatModelObservationConvention();
+    private static final ChatModelObservationConvention DEFAULT_OBSERVATION_CONVENTION = new DefaultChatModelObservationConvention();
 
-	private static final ToolCallingManager DEFAULT_TOOL_CALLING_MANAGER = ToolCallingManager.builder().build();
+    private static final ToolCallingManager DEFAULT_TOOL_CALLING_MANAGER = ToolCallingManager.builder().build();
+    private static final String METADATA_REASONING_CONTENT = "deepseek_reasoning_content";
+    /**
+     * The retry template used to retry the DeepSeek API calls.
+     */
+    public final RetryTemplate retryTemplate;
+    /**
+     * The default options used for the chat completion requests.
+     */
+    private final DeepSeekChatOptions defaultOptions;
+    /**
+     * Low-level access to the DeepSeek API.
+     */
+    private final DeepSeekApi deepSeekApi;
+    /**
+     * Observation registry used for instrumentation.
+     */
+    private final ObservationRegistry observationRegistry;
+    /**
+     * The tool calling manager used to execute tools.
+     */
+    private final ToolCallingManager toolCallingManager;
+    /**
+     * The tool execution eligibility predicate used to determine if a tool can be
+     * executed.
+     */
+    private final ToolExecutionEligibilityPredicate toolExecutionEligibilityPredicate;
+    /**
+     * Conventions to use for generating observations.
+     */
+    private ChatModelObservationConvention observationConvention = DEFAULT_OBSERVATION_CONVENTION;
 
-	/**
-	 * The default options used for the chat completion requests.
-	 */
-	private final DeepSeekChatOptions defaultOptions;
+    public DeepSeekChatModel(DeepSeekApi deepSeekApi,
+                             DeepSeekChatOptions defaultOptions,
+                             ToolCallingManager toolCallingManager,
+                             RetryTemplate retryTemplate,
+                             ObservationRegistry observationRegistry) {
+        this(deepSeekApi, defaultOptions, toolCallingManager, retryTemplate, observationRegistry,
+                new DefaultToolExecutionEligibilityPredicate());
+    }
 
-	/**
-	 * The retry template used to retry the DeepSeek API calls.
-	 */
-	public final RetryTemplate retryTemplate;
+    public DeepSeekChatModel(DeepSeekApi deepSeekApi,
+                             DeepSeekChatOptions defaultOptions,
+                             ToolCallingManager toolCallingManager,
+                             RetryTemplate retryTemplate,
+                             ObservationRegistry observationRegistry,
+                             ToolExecutionEligibilityPredicate toolExecutionEligibilityPredicate) {
+        Assert.notNull(deepSeekApi, "deepSeekApi cannot be null");
+        Assert.notNull(defaultOptions, "defaultOptions cannot be null");
+        Assert.notNull(toolCallingManager, "toolCallingManager cannot be null");
+        Assert.notNull(retryTemplate, "retryTemplate cannot be null");
+        Assert.notNull(observationRegistry, "observationRegistry cannot be null");
+        Assert.notNull(toolExecutionEligibilityPredicate, "toolExecutionEligibilityPredicate cannot be null");
+        this.deepSeekApi = deepSeekApi;
+        this.defaultOptions = defaultOptions;
+        this.toolCallingManager = toolCallingManager;
+        this.retryTemplate = retryTemplate;
+        this.observationRegistry = observationRegistry;
+        this.toolExecutionEligibilityPredicate = toolExecutionEligibilityPredicate;
+    }
 
-	/**
-	 * Low-level access to the DeepSeek API.
-	 */
-	private final DeepSeekApi deepSeekApi;
+    public static Builder builder() {
+        return new Builder();
+    }
 
-	/**
-	 * Observation registry used for instrumentation.
-	 */
-	private final ObservationRegistry observationRegistry;
+    @Override
+    public @NonNull ChatResponse call(Prompt prompt) {
+        Prompt requestPrompt = buildRequestPrompt(prompt);
+        return this.internalCall(requestPrompt, null);
+    }
 
-	/**
-	 * The tool calling manager used to execute tools.
-	 */
-	private final ToolCallingManager toolCallingManager;
+    public ChatResponse internalCall(Prompt prompt, ChatResponse previousChatResponse) {
 
-	/**
-	 * The tool execution eligibility predicate used to determine if a tool can be
-	 * executed.
-	 */
-	private final ToolExecutionEligibilityPredicate toolExecutionEligibilityPredicate;
+        ChatCompletionRequest request = createRequest(prompt, false);
 
-	/**
-	 * Conventions to use for generating observations.
-	 */
-	private ChatModelObservationConvention observationConvention = DEFAULT_OBSERVATION_CONVENTION;
+        ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
+                .prompt(prompt)
+                .provider(DeepSeekConstants.PROVIDER_NAME)
+                .build();
 
-	public DeepSeekChatModel(DeepSeekApi deepSeekApi,
-							 DeepSeekChatOptions defaultOptions,
-	                         ToolCallingManager toolCallingManager,
-							 RetryTemplate retryTemplate,
-	                         ObservationRegistry observationRegistry) {
-		this(deepSeekApi, defaultOptions, toolCallingManager, retryTemplate, observationRegistry,
-				new DefaultToolExecutionEligibilityPredicate());
-	}
+        ChatResponse response = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION
+                .observation(this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
+                        this.observationRegistry)
+                .observe(() -> {
 
-	public DeepSeekChatModel(DeepSeekApi deepSeekApi,
-							 DeepSeekChatOptions defaultOptions,
-	                         ToolCallingManager toolCallingManager,
-							 RetryTemplate retryTemplate,
-							 ObservationRegistry observationRegistry,
-	                         ToolExecutionEligibilityPredicate toolExecutionEligibilityPredicate) {
-		Assert.notNull(deepSeekApi, "deepSeekApi cannot be null");
-		Assert.notNull(defaultOptions, "defaultOptions cannot be null");
-		Assert.notNull(toolCallingManager, "toolCallingManager cannot be null");
-		Assert.notNull(retryTemplate, "retryTemplate cannot be null");
-		Assert.notNull(observationRegistry, "observationRegistry cannot be null");
-		Assert.notNull(toolExecutionEligibilityPredicate, "toolExecutionEligibilityPredicate cannot be null");
-		this.deepSeekApi = deepSeekApi;
-		this.defaultOptions = defaultOptions;
-		this.toolCallingManager = toolCallingManager;
-		this.retryTemplate = retryTemplate;
-		this.observationRegistry = observationRegistry;
-		this.toolExecutionEligibilityPredicate = toolExecutionEligibilityPredicate;
-	}
+                    ResponseEntity<ChatCompletion> completionEntity = this.retryTemplate
+                            .execute(ctx -> this.deepSeekApi.chatCompletionEntity(request));
 
-	@Override
-	public @NonNull ChatResponse call(Prompt prompt) {
-		Prompt requestPrompt = buildRequestPrompt(prompt);
-		return this.internalCall(requestPrompt, null);
-	}
+                    var chatCompletion = completionEntity.getBody();
 
-	public ChatResponse internalCall(Prompt prompt, ChatResponse previousChatResponse) {
+                    if (chatCompletion == null) {
+                        logger.warn("No chat completion returned for prompt: {}", prompt);
+                        return new ChatResponse(List.of());
+                    }
 
-		ChatCompletionRequest request = createRequest(prompt, false);
+                    List<Choice> choices = chatCompletion.choices();
+                    if (choices == null) {
+                        logger.warn("No choices returned for prompt: {}", prompt);
+                        return new ChatResponse(List.of());
+                    }
 
-		ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
-			.prompt(prompt)
-			.provider(DeepSeekConstants.PROVIDER_NAME)
-			.build();
-
-		ChatResponse response = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION
-			.observation(this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
-					this.observationRegistry)
-			.observe(() -> {
-
-				ResponseEntity<ChatCompletion> completionEntity = this.retryTemplate
-					.execute(ctx -> this.deepSeekApi.chatCompletionEntity(request));
-
-				var chatCompletion = completionEntity.getBody();
-
-				if (chatCompletion == null) {
-					logger.warn("No chat completion returned for prompt: {}", prompt);
-					return new ChatResponse(List.of());
-				}
-
-				List<Choice> choices = chatCompletion.choices();
-				if (choices == null) {
-					logger.warn("No choices returned for prompt: {}", prompt);
-					return new ChatResponse(List.of());
-				}
-
-				List<Generation> generations = choices.stream().map(choice -> {
-			// @formatter:off
+                    List<Generation> generations = choices.stream().map(choice -> {
+                        // @formatter:off
 					Map<String, Object> metadata = Map.of(
 							"id", chatCompletion.id() != null ? chatCompletion.id() : "",
 							"role", choice.message().role() != null ? choice.message().role().name() : "",
 							"index", choice.index(),
 							"finishReason", choice.finishReason() != null ? choice.finishReason().name() : "");
 					// @formatter:on
-					return buildGeneration(choice, metadata);
-				}).toList();
+                        return buildGeneration(choice, metadata);
+                    }).toList();
 
-				// Current usage
-				DeepSeekApi.Usage usage = completionEntity.getBody().usage();
-				Usage currentChatResponseUsage = usage != null ? getDefaultUsage(usage) : new EmptyUsage();
-				Usage accumulatedUsage = UsageCalculator.getCumulativeUsage(currentChatResponseUsage,
-						previousChatResponse);
-				ChatResponse chatResponse = new ChatResponse(generations,
-						from(completionEntity.getBody(), accumulatedUsage));
+                    // Current usage
+                    DeepSeekApi.Usage usage = completionEntity.getBody().usage();
+                    Usage currentChatResponseUsage = usage != null ? getDefaultUsage(usage) : new EmptyUsage();
+                    Usage accumulatedUsage = UsageCalculator.getCumulativeUsage(currentChatResponseUsage,
+                            previousChatResponse);
+                    ChatResponse chatResponse = new ChatResponse(generations,
+                            from(completionEntity.getBody(), accumulatedUsage));
 
-				observationContext.setResponse(chatResponse);
+                    observationContext.setResponse(chatResponse);
 
-				return chatResponse;
+                    return chatResponse;
 
-			});
+                });
 
-		if (this.toolExecutionEligibilityPredicate.isToolExecutionRequired(prompt.getOptions(), response)) {
-			var toolExecutionResult = this.toolCallingManager.executeToolCalls(prompt, response);
-			if (toolExecutionResult.returnDirect()) {
-				// Return tool execution result directly to the client.
-				return ChatResponse.builder()
-					.from(response)
-					.generations(ToolExecutionResult.buildGenerations(toolExecutionResult))
-					.build();
-			}
-			else {
-				// Send the tool execution result back to the model.
-				return this.internalCall(new Prompt(toolExecutionResult.conversationHistory(), prompt.getOptions()),
-						response);
-			}
-		}
+        if (this.toolExecutionEligibilityPredicate.isToolExecutionRequired(prompt.getOptions(), response)) {
+            var toolExecutionResult = this.toolCallingManager.executeToolCalls(prompt, response);
+            if (toolExecutionResult.returnDirect()) {
+                // Return tool execution result directly to the client.
+                return ChatResponse.builder()
+                        .from(response)
+                        .generations(ToolExecutionResult.buildGenerations(toolExecutionResult))
+                        .build();
+            } else {
+                // Send the tool execution result back to the model.
+                return this.internalCall(new Prompt(toolExecutionResult.conversationHistory(), prompt.getOptions()),
+                        response);
+            }
+        }
 
-		return response;
-	}
+        return response;
+    }
 
-	@Override
-	public @NonNull Flux<ChatResponse> stream(Prompt prompt) {
-		Prompt requestPrompt = buildRequestPrompt(prompt);
-		return internalStream(requestPrompt, null);
-	}
+    @Override
+    public @NonNull Flux<ChatResponse> stream(Prompt prompt) {
+        Prompt requestPrompt = buildRequestPrompt(prompt);
+        return internalStream(requestPrompt, null);
+    }
 
-	public Flux<ChatResponse> internalStream(Prompt prompt, ChatResponse previousChatResponse) {
-		return Flux.deferContextual(contextView -> {
-			ChatCompletionRequest request = createRequest(prompt, true);
+    public Flux<ChatResponse> internalStream(Prompt prompt, ChatResponse previousChatResponse) {
+        return Flux.deferContextual(contextView -> {
+            ChatCompletionRequest request = createRequest(prompt, true);
 
-			Flux<DeepSeekApi.ChatCompletionChunk> completionChunks = this.deepSeekApi.chatCompletionStream(request);
+            Flux<DeepSeekApi.ChatCompletionChunk> completionChunks = this.deepSeekApi.chatCompletionStream(request);
 
-			// For chunked responses, only the first chunk contains the choice role.
-			// The rest of the chunks with same ID share the same role.
-			ConcurrentHashMap<String, String> roleMap = new ConcurrentHashMap<>();
+            // For chunked responses, only the first chunk contains the choice role.
+            // The rest of the chunks with same ID share the same role.
+            ConcurrentHashMap<String, String> roleMap = new ConcurrentHashMap<>();
 
-			final StringBuilder accumulatedReasoning = new StringBuilder();
+            final StringBuilder accumulatedReasoning = new StringBuilder();
 
-			final ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
-				.prompt(prompt)
-				.provider(DeepSeekConstants.PROVIDER_NAME)
-				.build();
+            final ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
+                    .prompt(prompt)
+                    .provider(DeepSeekConstants.PROVIDER_NAME)
+                    .build();
 
-			Observation observation = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION.observation(
-					this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
-					this.observationRegistry);
+            Observation observation = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION.observation(
+                    this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
+                    this.observationRegistry);
 
-			observation.parentObservation(contextView.getOrDefault(ObservationThreadLocalAccessor.KEY, null)).start();
+            observation.parentObservation(contextView.getOrDefault(ObservationThreadLocalAccessor.KEY, null)).start();
 
-			Flux<ChatResponse> chatResponse = completionChunks.map(this::chunkToChatCompletion)
-				.map(chatCompletion -> {
-					try {
-						String id = chatCompletion.id();
+            Flux<ChatResponse> chatResponse = completionChunks.map(this::chunkToChatCompletion)
+                    .map(chatCompletion -> {
+                        try {
+                            String id = chatCompletion.id();
 
-						// Accumulate reasoning_content from earlier streaming chunks
-                        chatCompletion.choices().stream()
-                                .map(c -> c.message().reasoningContent())
-                                .filter(Objects::nonNull)
-                                .findFirst().ifPresent(accumulatedReasoning::append);
+                            // Accumulate reasoning_content from earlier streaming chunks
+                            chatCompletion.choices().stream()
+                                    .map(c -> c.message().reasoningContent())
+                                    .filter(Objects::nonNull)
+                                    .findFirst().ifPresent(accumulatedReasoning::append);
 
-                        List<Generation> generations = chatCompletion.choices().stream().map(choice -> {
-							if (choice.message().role() != null) {
-								roleMap.putIfAbsent(id, choice.message().role().name());
-							}
+                            List<Generation> generations = chatCompletion.choices().stream().map(choice -> {
+                                if (choice.message().role() != null) {
+                                    roleMap.putIfAbsent(id, choice.message().role().name());
+                                }
 
-							Map<String, Object> metadata = Map.of(
-									"id", chatCompletion.id(),
-									"role", roleMap.getOrDefault(id, ""),
-									"finishReason", choice.finishReason() != null ? choice.finishReason().name() : ""
-							);
+                                Map<String, Object> metadata = Map.of(
+                                        "id", chatCompletion.id(),
+                                        "role", roleMap.getOrDefault(id, ""),
+                                        "finishReason", choice.finishReason() != null ? choice.finishReason().name() : ""
+                                );
 
-							// Carry accumulated reasoning into the tool-call chunk via metadata
-							String accReasoning = !accumulatedReasoning.isEmpty() ? accumulatedReasoning.toString() : null;
-							if (accReasoning != null) {
-								Map<String, Object> enriched = new java.util.HashMap<>(metadata);
-								enriched.put(METADATA_REASONING_CONTENT, accReasoning);
-								metadata = enriched;
-							}
+                                // Carry accumulated reasoning into the tool-call chunk via metadata
+                                String accReasoning = !accumulatedReasoning.isEmpty() ? accumulatedReasoning.toString() : null;
+                                if (accReasoning != null) {
+                                    Map<String, Object> enriched = new java.util.HashMap<>(metadata);
+                                    enriched.put(METADATA_REASONING_CONTENT, accReasoning);
+                                    metadata = enriched;
+                                }
 
-							return buildGeneration(choice, metadata);
-						}).toList();
+                                return buildGeneration(choice, metadata);
+                            }).toList();
 
-						DeepSeekApi.Usage usage = chatCompletion.usage();
-						Usage currentUsage = (usage != null) ? getDefaultUsage(usage) : new EmptyUsage();
-						Usage cumulativeUsage = UsageCalculator.getCumulativeUsage(currentUsage, previousChatResponse);
+                            DeepSeekApi.Usage usage = chatCompletion.usage();
+                            Usage currentUsage = (usage != null) ? getDefaultUsage(usage) : new EmptyUsage();
+                            Usage cumulativeUsage = UsageCalculator.getCumulativeUsage(currentUsage, previousChatResponse);
 
-						return new ChatResponse(generations, from(chatCompletion, cumulativeUsage));
-					}
-					catch (Exception e) {
-						logger.error("Error processing chat completion", e);
-						return new ChatResponse(List.of());
-					}
+                            return new ChatResponse(generations, from(chatCompletion, cumulativeUsage));
+                        } catch (Exception e) {
+                            logger.error("Error processing chat completion", e);
+                            return new ChatResponse(List.of());
+                        }
 
-				});
+                    });
 
-			// @formatter:off
+            // @formatter:off
 			Flux<ChatResponse> flux = chatResponse.flatMap(response -> {
 				if (!this.toolExecutionEligibilityPredicate.isToolExecutionRequired(prompt.getOptions(), response)) {
 					return Flux.just(response);
@@ -343,8 +326,6 @@ public class DeepSeekChatModel implements ChatModel {
 
 		});
 	}
-
-	private static final String METADATA_REASONING_CONTENT = "deepseek_reasoning_content";
 
 	private Generation buildGeneration(Choice choice, Map<String, Object> metadata) {
 		List<AssistantMessage.ToolCall> toolCalls = choice.message().toolCalls() == null ? List.of()
@@ -532,10 +513,6 @@ public class DeepSeekChatModel implements ChatModel {
 	public void setObservationConvention(ChatModelObservationConvention observationConvention) {
 		Assert.notNull(observationConvention, "observationConvention cannot be null");
 		this.observationConvention = observationConvention;
-	}
-
-	public static Builder builder() {
-		return new Builder();
 	}
 
 	public static final class Builder {

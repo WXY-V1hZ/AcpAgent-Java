@@ -23,19 +23,19 @@ import java.util.concurrent.locks.ReentrantLock;
 @Component
 public class FileSystemTools implements BaseTool {
 
-    @Override
-    public List<String> getAllowedToolNames() {
-        return List.of(
-                "listDirectory"
-        );
-    }
-
     // 默认的读取行数限制
     private static final int DEFAULT_READ_LIMIT = 1000;
     // 限制输出的最大字符数
     private static final int MAX_OUTPUT_LENGTH = 50_000;
     // 文件锁，一个路径对应一把锁
     private static final Map<String, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
+
+    @Override
+    public List<String> getAllowedToolNames() {
+        return List.of(
+                "listDirectory"
+        );
+    }
 
     @Tool(description = """
             读取文件的内容。
@@ -44,7 +44,7 @@ public class FileSystemTools implements BaseTool {
             """)
     public String readFile(@ToolParam ReadInputSchema readInputSchema) {
         int offset = readInputSchema.getOffset() == null ? 1 : readInputSchema.getOffset();
-        int limit =  readInputSchema.getLimit() == null ? DEFAULT_READ_LIMIT : readInputSchema.getLimit();
+        int limit = readInputSchema.getLimit() == null ? DEFAULT_READ_LIMIT : readInputSchema.getLimit();
         try {
             return readFile(readInputSchema.getFilePath(), offset, limit);
         } catch (IOException e) {
@@ -245,13 +245,13 @@ public class FileSystemTools implements BaseTool {
         return false;
     }
 
-    private static String clip(String text) {
+    private String clip(String text) {
         if (text.length() <= MAX_OUTPUT_LENGTH) return text;
         return "... [content truncated, showing last " + MAX_OUTPUT_LENGTH + " characters]\n"
                 + text.substring(text.length() - MAX_OUTPUT_LENGTH);
     }
 
-    private static int countOccurrences(String text, String pattern) {
+    private int countOccurrences(String text, String pattern) {
         int count = 0;
         int idx = 0;
         while ((idx = text.indexOf(pattern, idx)) != -1) {
