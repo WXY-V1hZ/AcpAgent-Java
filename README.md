@@ -85,4 +85,4 @@ AcpAgent/
 - [x] harness 工程
   - [x] skills
   - [x] AGENTS.md
-- [ ] 处理用户的消息附件
+- [x] 处理用户的消息附件

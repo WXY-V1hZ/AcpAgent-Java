@@ -12,12 +12,13 @@ import java.util.logging.*;
  *
  * 使用: java Main.java [ws://localhost:8081/acp]
  *
- * 日志文件: acp-mid.log（和执行目录同级）
+ * 日志文件: acp-mid.log（执行目录同级，每次覆盖写入，退出时自动删除）
  */
 public class Main {
 
     private static final Logger log = Logger.getLogger("acp-mid");
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+    private static final boolean LOG_TO_FILE = false;  // true = 输出日志到 acp-mid.log，false = 仅控制台
 
     public static void main(String[] args) throws Exception {
         var wsUrl = args.length > 0 ? args[0] : "ws://localhost:8081/acp";
@@ -117,17 +118,20 @@ public class Main {
     }
 
     private static void setupFileLogging() throws IOException {
-        // 文件日志 → acp-mid.log（记录所有详细消息）
-        var file = new FileHandler("acp-mid.log", true);  // append = true
-        file.setLevel(Level.ALL);
-        file.setFormatter(new Formatter() {
+        if (!LOG_TO_FILE) return;  // 未启用文件日志，仅保留控制台输出
+        // 文件日志 → acp-mid.log（每次启动覆盖写入，退出时自动删除）
+        var logFile = new File("acp-mid.log");
+        logFile.deleteOnExit();  // 无论正常退出还是异常退出，JVM 退出时自动删除
+        var handler = new FileHandler(logFile.getPath(), false);  // append = false，覆盖写入
+        handler.setLevel(Level.ALL);
+        handler.setFormatter(new Formatter() {
             @Override
             public String format(LogRecord r) {
                 return TS.format(LocalDateTime.now()) + " [" + r.getLevel() + "] "
                         + r.getMessage() + System.lineSeparator();
             }
         });
-        log.addHandler(file);
+        log.addHandler(handler);
         log.setLevel(Level.ALL);
     }
 }
