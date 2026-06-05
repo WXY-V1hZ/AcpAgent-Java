@@ -1,6 +1,5 @@
 package com.v1hz.acpagent;
 
-import com.agentclientprotocol.sdk.agent.AcpAsyncAgent;
 import com.agentclientprotocol.sdk.agent.PromptContext;
 import com.agentclientprotocol.sdk.spec.AcpSchema.*;
 import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
@@ -14,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -33,25 +31,29 @@ public class AcpAgent {
     private final ChatService chatService;
     private final SessionService sessionService;
     private final AgentService agentService;
-    private final AcpAsyncAgent acpAsyncAgent;
     private final SessionUpdateService sessionUpdateService;
     private final CancellationService cancellationService;
+    private final McpService mcpService;
 
     /**
      * 按 sessionId 追踪 prompt 取消信号
      */
     private final ConcurrentHashMap<String, Sinks.One<StopReason>> cancelSignals = new ConcurrentHashMap<>();
 
-    public AcpAgent(ChatService chatService, SessionService sessionService,
-                    AgentService agentService, @Lazy AcpAsyncAgent acpAsyncAgent,
-                    SessionUpdateService sessionUpdateService,
-                    CancellationService cancellationService) {
+    public AcpAgent(
+            ChatService chatService,
+            SessionService sessionService,
+            AgentService agentService,
+            SessionUpdateService sessionUpdateService,
+            CancellationService cancellationService,
+            McpService mcpService
+    ) {
         this.chatService = chatService;
         this.sessionService = sessionService;
         this.agentService = agentService;
-        this.acpAsyncAgent = acpAsyncAgent;
         this.sessionUpdateService = sessionUpdateService;
         this.cancellationService = cancellationService;
+        this.mcpService = mcpService;
     }
 
     public Mono<InitializeResponse> init(InitializeRequest request) {
@@ -74,6 +76,7 @@ public class AcpAgent {
         log.info("收到ACP请求：{}", request);
         return Mono.fromCallable(() -> {
             String sessionId = sessionService.create(request.cwd());
+            mcpService.initClients(sessionId, request.mcpServers());
             return new NewSessionResponse(
                     sessionId,
                     new SessionModeState(AcpConstants.DEFAULT_SESSION_MODE_ID, AcpConstants.MODES),
@@ -88,6 +91,7 @@ public class AcpAgent {
         return Mono.fromCallable(() -> {
             String sessionId = request.sessionId();
             Session session = sessionService.findById(sessionId).orElseThrow();
+            mcpService.initClients(sessionId, request.mcpServers());
             var response = new LoadSessionResponse(
                     new SessionModeState(session.getModeId(), AcpConstants.MODES),
                     new SessionModelState(session.getModelId(), AcpConstants.MODELS),
@@ -108,7 +112,9 @@ public class AcpAgent {
     public Mono<ResumeSessionResponse> resumeSession(ResumeSessionRequest request) {
         log.info("收到ACP请求：{}", request);
         return Mono.fromCallable(() -> {
-            Session session = sessionService.findById(request.sessionId()).orElseThrow();
+            String sessionId = request.sessionId();
+            Session session = sessionService.findById(sessionId).orElseThrow();
+            mcpService.initClients(sessionId, request.mcpServers());
             return new ResumeSessionResponse(
                     new SessionModeState(session.getModeId(), AcpConstants.MODES),
                     new SessionModelState(session.getModelId(), AcpConstants.MODELS),
@@ -120,8 +126,10 @@ public class AcpAgent {
     public Mono<CloseSessionResponse> closeSession(CloseSessionRequest request) {
         log.info("收到ACP请求：{}", request);
         return Mono.fromRunnable(() -> {
-                    cancelSession(request.sessionId());
-                    sessionService.close(request.sessionId());
+                    String sessionId = request.sessionId();
+                    cancelSession(sessionId);
+                    mcpService.closeClients(sessionId);
+                    sessionService.close(sessionId);
                 }).thenReturn(new CloseSessionResponse(null))
                 .subscribeOn(Schedulers.boundedElastic());
     }

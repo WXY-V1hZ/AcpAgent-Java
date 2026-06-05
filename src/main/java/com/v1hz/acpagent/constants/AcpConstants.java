@@ -11,7 +11,7 @@ import java.util.List;
 public class AcpConstants {
 
     // 模式
-    public static final String DEFAULT_SESSION_MODE_ID = SessionModeEnum.DEFAULT.getId();
+    public static final String DEFAULT_SESSION_MODE_ID = SessionModeEnum.ASK.getId();
     public static final List<AcpSchema.SessionMode> MODES = Arrays.stream(SessionModeEnum.values())
             .map(SessionModeEnum::toSessionMode)
             .toList();

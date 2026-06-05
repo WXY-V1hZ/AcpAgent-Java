@@ -8,7 +8,9 @@ dependencies {
     implementation(platform("org.springframework.ai:spring-ai-bom:1.1.2"))
     implementation("org.springframework.ai:spring-ai-starter-model-deepseek")
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
-//    implementation("org.springframework.ai:spring-ai-starter-mcp-client-webflux")
+    implementation("org.springframework.ai:spring-ai-mcp")
+    implementation("io.modelcontextprotocol.sdk:mcp-core:0.17.0")
+    implementation("io.modelcontextprotocol.sdk:mcp-json-jackson2:0.17.0")
 //    implementation("org.springframework.ai:spring-ai-markdown-document-reader")
 //    implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
 

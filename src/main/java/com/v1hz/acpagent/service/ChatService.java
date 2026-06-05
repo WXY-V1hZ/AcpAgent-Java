@@ -26,6 +26,7 @@ public class ChatService {
 
     private final AgentService agentService;
     private final SessionService sessionService;
+    private final McpService mcpService;
 
 
     /**
@@ -56,7 +57,8 @@ public class ChatService {
                     DeepSeekApi deepSeekApi = agentService.createDeepSeekApi();
                     var sessionModel = SessionModelEnum.fromId(session.getModelId()).orElseThrow();
                     DeepSeekChatModel chatModel = agentService.createChatModel(deepSeekApi, sessionModel.getModelName());
-                    return agentService.createReactAgent(chatModel, session.getCwd());
+                    var mcpCallbacks = mcpService.getToolCallbacks(sessionId);
+                    return agentService.createReactAgent(chatModel, session.getCwd(), mcpCallbacks);
                 })
                 .flatMapMany(agent -> {
                     try {

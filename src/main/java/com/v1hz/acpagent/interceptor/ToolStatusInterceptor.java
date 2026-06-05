@@ -49,7 +49,6 @@ public class ToolStatusInterceptor extends ToolInterceptor {
         if (denied != null) return denied;
         chain.inProgress();
         if (cancellationService.isCancelled(sessionId)) {
-            log.warn("Tool execution cancelled: {}", toolName);
             chain.failed();
             return ToolCallResponse.error(toolCallId, toolName, "Session was cancelled");
         }

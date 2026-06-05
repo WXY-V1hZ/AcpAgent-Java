@@ -12,7 +12,7 @@ import java.util.Optional;
 @AllArgsConstructor
 public enum SessionModeEnum {
 
-    DEFAULT("default", "只通过允许的请求"),
+    ASK("ask", "之通过默认安全的请求"),
     AUTO("auto", "自动通过所有请求"),
     // TODO 实现计划模式
 //    PLAN("plan", "撰写计划"),

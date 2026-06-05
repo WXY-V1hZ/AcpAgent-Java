@@ -15,12 +15,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.deepseek.api.DeepSeekApi;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -80,14 +82,19 @@ public class AgentService {
     }
 
     @NonNull
-    public ReactAgent createReactAgent(@NonNull ChatModel chatModel, @NonNull String cwd) {
-        return ReactAgent.builder()
+    public ReactAgent createReactAgent(@NonNull ChatModel chatModel, @NonNull String cwd,
+                                       @NonNull List<ToolCallback> mcpToolCallbacks) {
+        var builder = ReactAgent.builder()
                 .name("Agent智能体")
                 .model(chatModel)
                 .systemPrompt(buildSystemPrompt(cwd))
                 .methodTools((Object[]) toolService.getTools())
                 .saver(saver)
-                .interceptors(toolStatusInterceptor)
-                .build();
+                .interceptors(toolStatusInterceptor);
+        // 合并 MCP 工具
+        if (!mcpToolCallbacks.isEmpty()) {
+            builder.tools(mcpToolCallbacks.toArray(ToolCallback[]::new));
+        }
+        return builder.build();
     }
 }
