@@ -56,15 +56,6 @@ AcpAgent/
 └── README.md                          # 本文件
 ```
 
-## 上下文与技能
-
-`AgentService` 在创建 `ReactAgent` 时会装配两类上下文扩展：
-
-- `SkillsAgentHook`：从 `~/{acpagent.home-dir}/skills` 和 `{cwd}/{acpagent.home-dir}/skills` 加载 skills，并注册 `read_skill` 工具。
-- `AgentsMdHook`：从 `~/{acpagent.home-dir}/AGENTS.md` 和 `{cwd}/AGENTS.md` 读取指令，并追加到模型的 system prompt。
-
-`AgentsMdHook` 会显式区分用户级和项目级内容，并在两个路径指向同一文件时只注入一次。
-
 ## 待办
 
 - [x] 实现 session 管理
