@@ -3,11 +3,16 @@ package com.v1hz.acpagent.service;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.AgentHook;
+import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.file.FileSystemSaver;
 import com.alibaba.cloud.ai.graph.serializer.plain_text.jackson.SpringAIJacksonStateSerializer;
+import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
+import com.alibaba.cloud.ai.graph.skills.registry.filesystem.FileSystemSkillRegistry;
 import com.v1hz.acpagent.component.DeepSeekChatModel;
+import com.v1hz.acpagent.hook.AgentsMdHook;
 import com.v1hz.acpagent.interceptor.ToolStatusInterceptor;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -34,12 +39,12 @@ public class AgentService {
     @Value("${spring.ai.deepseek.api-key}")
     String apiKey;
     @Value("${acpagent.home-dir}")
-    String homeDir;
+    String agentHomeDir;
     private BaseCheckpointSaver saver;
 
     @PostConstruct
-    void initSaver() {
-        var sessionsDir = Path.of(System.getProperty("user.home"), homeDir, "sessions", "checkpoints");
+    void init() {
+        var sessionsDir = Path.of(System.getProperty("user.home"), agentHomeDir, "sessions", "checkpoints");
         var stateSerializer = new SpringAIJacksonStateSerializer(OverAllState::new);
         saver = FileSystemSaver.builder()
                 .targetFolder(sessionsDir)
@@ -84,13 +89,31 @@ public class AgentService {
     @NonNull
     public ReactAgent createReactAgent(@NonNull ChatModel chatModel, @NonNull String cwd,
                                        @NonNull List<ToolCallback> mcpToolCallbacks) {
+        String userHome = System.getProperty("user.home");
+        var userSkillsDir = Path.of(userHome, agentHomeDir, "skills").toString();
+        var projectSkillsDir = Path.of(cwd, agentHomeDir, "skills").toString();
+        // Skills 使用用户级和项目级目录；AGENTS.md 使用相同的用户级目录和当前 cwd 根目录。
+        SkillRegistry registry = FileSystemSkillRegistry.builder()
+                .userSkillsDirectory(userSkillsDir)
+                .projectSkillsDirectory(projectSkillsDir)
+                .build();
+        AgentHook skillsHook = SkillsAgentHook.builder()
+                .skillRegistry(registry)
+                .autoReload(true)
+                .build();
+        AgentHook agentMdHook = AgentsMdHook.builder()
+                .projectPath(Path.of(cwd, "AGENTS.md"))
+                .userPath(Path.of(userHome, agentHomeDir, "AGENTS.md"))
+                .build();
+        // hook 顺序决定 BEFORE_AGENT 执行顺序，AGENTS.md 先刷新，skills 随后 reload。
         var builder = ReactAgent.builder()
                 .name("Agent智能体")
                 .model(chatModel)
                 .systemPrompt(buildSystemPrompt(cwd))
                 .methodTools((Object[]) toolService.getTools())
                 .saver(saver)
-                .interceptors(toolStatusInterceptor);
+                .interceptors(toolStatusInterceptor)
+                .hooks(List.of(agentMdHook, skillsHook));
         // 合并 MCP 工具
         if (!mcpToolCallbacks.isEmpty()) {
             builder.tools(mcpToolCallbacks.toArray(ToolCallback[]::new));

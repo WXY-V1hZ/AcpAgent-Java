@@ -38,6 +38,8 @@ uploads/
 ### VS Code ###
 .vscode/
 
-*.log
+**.log
 sdk-ref/
 docs/
+
+**.log.*

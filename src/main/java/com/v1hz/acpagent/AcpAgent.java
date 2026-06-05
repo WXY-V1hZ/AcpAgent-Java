@@ -13,11 +13,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MimeType;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -61,8 +64,8 @@ public class AcpAgent {
         var caps = new AgentCapabilities(
                 true,
                 new SessionCapabilities(Map.of(), Map.of(), Map.of(), null),
-                new McpCapabilities(false, false),
-                new PromptCapabilities(false, false, false),
+                new McpCapabilities(true, true),
+                new PromptCapabilities(false, true, false),
                 null
         );
         return Mono.just(new InitializeResponse(
@@ -176,8 +179,9 @@ public class AcpAgent {
         log.info("收到ACP请求：{}", request);
 
         String sessionId = request.sessionId();
-        String message = request.text();
-        List<Media> media = new ArrayList<>(); // TODO 根据prompt构建media
+        List<Media> media = new ArrayList<>();
+        String message = buildMedia(request.prompt(), media);
+        if (message == null) return Mono.just(new PromptResponse(StopReason.END_TURN));
 
         Sinks.One<StopReason> cancelSignal = Sinks.one();
         cancelSignals.put(sessionId, cancelSignal);
@@ -224,5 +228,68 @@ public class AcpAgent {
         if (signal != null) {
             signal.tryEmitValue(StopReason.CANCELLED);
         }
+    }
+
+    // ─── prompt 媒体构建 ───
+
+    @Nullable
+    private String buildMedia(List<ContentBlock> prompt, List<Media> media) {
+        final var message = new StringBuilder();
+        if (prompt == null || prompt.isEmpty()) return null;
+        for (final var block : prompt) {
+            switch (block) {
+                case TextContent text when StringUtils.isNotEmpty(text.text()) ->
+                        message.append(text.text());
+
+                case ResourceLink link when StringUtils.isNotEmpty(link.uri()) -> {
+                    final var mime = StringUtils.defaultIfEmpty(link.mimeType(), "text/plain");
+                    media.add(new Media(MimeType.valueOf(mime), URI.create(link.uri())));
+                    message.append(link.uri());
+                }
+
+                case ImageContent img -> {
+                    final var mime = StringUtils.defaultIfEmpty(img.mimeType(), "image/png");
+                    if (StringUtils.isNotEmpty(img.data())) {
+                        media.add(new Media(MimeType.valueOf(mime), dataUri(mime, img.data())));
+                    } else if (StringUtils.isNotEmpty(img.uri())) {
+                        media.add(new Media(MimeType.valueOf(mime), URI.create(img.uri())));
+                    }
+                    message.append(img.uri());
+                }
+
+                case AudioContent audio -> {
+                    final var mime = StringUtils.defaultIfEmpty(audio.mimeType(), "audio/wav");
+                    if (StringUtils.isNotEmpty(audio.data())) {
+                        media.add(new Media(MimeType.valueOf(mime), dataUri(mime, audio.data())));
+                    }
+                }
+
+                case Resource res when res.resource() instanceof TextResourceContents text -> {
+                    if (StringUtils.isNotEmpty(text.text())) {
+                        message.append(text.text());
+                    }
+                }
+
+                case Resource res when res.resource() instanceof BlobResourceContents(
+                        String blob, String uri, String mimeType
+                ) -> {
+                    final var mime = StringUtils.defaultIfEmpty(mimeType, "application/octet-stream");
+                    if (StringUtils.isNotEmpty(blob)) {
+                        media.add(new Media(MimeType.valueOf(mime), dataUri(mime, blob)));
+                    } else if (StringUtils.isNotEmpty(uri)) {
+                        media.add(new Media(MimeType.valueOf(mime), URI.create(uri)));
+                    }
+                }
+
+                default -> {
+                    // ignore
+                }
+            }
+        }
+        return message.toString();
+    }
+
+    private URI dataUri(String mime, String base64Data) {
+        return URI.create("data:" + mime + ";base64," + base64Data);
     }
 }
