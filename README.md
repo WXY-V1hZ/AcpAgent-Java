@@ -76,13 +76,16 @@ AcpAgent/
   - [x] 白名单 / 权限分级
   - [x] ACP 通知添加 locations（文件位置）和 diff（变更对比）
 - [x] 切换模型
-- [ ] 上下文工程
-  - [x] 注入 session 的 cwd 到系统提示词
-  - [x] 工具执行时自动使用 session cwd
-  - [ ] 根据模式定制系统提示词
-  - [ ] 记忆管理
+- [x] 注入 session 的 cwd 到系统提示词
+- [x] 工具执行时自动使用 session cwd
 - [x] MCP 服务
-- [x] harness 工程
-  - [x] skills
-  - [x] AGENTS.md
+- [x] skills
+- [x] AGENTS.md
 - [x] 处理用户的消息附件
+- [ ] multi-agent (a2a)
+- [ ] subagent
+- [ ] plan
+- [ ] todo
+- [ ] 根据模式定制系统提示词
+- [ ] 记忆管理
+- [ ] 多模型服务商支持
