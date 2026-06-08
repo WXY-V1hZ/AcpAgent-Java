@@ -32,7 +32,6 @@ public class ToolStatusInterceptor extends ToolInterceptor {
 
     @Override
     public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
-        // executeBash 走特殊分支，其余工具走默认流程
         String toolName = request.getToolName();
         String toolCallId = request.getToolCallId();
         String arguments = request.getArguments();

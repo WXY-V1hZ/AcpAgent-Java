@@ -54,9 +54,8 @@ public class ChatService {
     ) {
         return Mono.fromCallable(() -> {
                     Session session = sessionService.findById(sessionId).orElseThrow();
-                    DeepSeekApi deepSeekApi = agentService.createDeepSeekApi();
                     var sessionModel = SessionModelEnum.fromId(session.getModelId()).orElseThrow();
-                    DeepSeekChatModel chatModel = agentService.createChatModel(deepSeekApi, sessionModel.getModelName());
+                    DeepSeekChatModel chatModel = agentService.createChatModel(sessionModel.getModelName());
                     var mcpCallbacks = mcpService.getToolCallbacks(sessionId);
                     return agentService.createReactAgent(chatModel, session.getCwd(), mcpCallbacks);
                 })

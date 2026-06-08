@@ -2,6 +2,7 @@ package com.v1hz.acpagent.service;
 
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
+import com.alibaba.cloud.ai.graph.agent.AgentTool;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.hook.AgentHook;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
@@ -22,6 +23,7 @@ import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.deepseek.api.DeepSeekApi;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
@@ -31,16 +33,27 @@ import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AgentService {
 
     private final ToolService toolService;
     private final ToolStatusInterceptor toolStatusInterceptor;
+    private final ReactAgent webSearchAgent;
+
     @Value("${spring.ai.deepseek.api-key}")
     String apiKey;
     @Value("${acpagent.home-dir}")
     String agentHomeDir;
     private BaseCheckpointSaver saver;
+
+    public AgentService(
+            ToolService toolService,
+            ToolStatusInterceptor toolStatusInterceptor,
+            @Lazy ReactAgent webSearchAgent
+    ) {
+        this.toolService = toolService;
+        this.toolStatusInterceptor = toolStatusInterceptor;
+        this.webSearchAgent = webSearchAgent;
+    }
 
     @PostConstruct
     void init() {
@@ -63,14 +76,9 @@ public class AgentService {
     }
 
     @NonNull
-    public DeepSeekApi createDeepSeekApi() {
-        return DeepSeekApi.builder().apiKey(apiKey).build();
-    }
-
-    @NonNull
-    public DeepSeekChatModel createChatModel(@NonNull DeepSeekApi deepSeekApi, @NonNull String modelName) {
+    public DeepSeekChatModel createChatModel(@NonNull String modelName) {
         return DeepSeekChatModel.builder()
-                .deepSeekApi(deepSeekApi)
+                .deepSeekApi(DeepSeekApi.builder().apiKey(apiKey).build())
                 .defaultOptions(
                         DeepSeekChatOptions.builder().model(modelName).build()
                 )
@@ -89,6 +97,7 @@ public class AgentService {
     @NonNull
     public ReactAgent createReactAgent(@NonNull ChatModel chatModel, @NonNull String cwd,
                                        @NonNull List<ToolCallback> mcpToolCallbacks) {
+        // 构建SKILL AGENTS.md 注入
         String userHome = System.getProperty("user.home");
         var userSkillsDir = Path.of(userHome, agentHomeDir, "skills").toString();
         var projectSkillsDir = Path.of(cwd, agentHomeDir, "skills").toString();
@@ -105,13 +114,14 @@ public class AgentService {
                 .projectPath(Path.of(cwd, "AGENTS.md"))
                 .userPath(Path.of(userHome, agentHomeDir, "AGENTS.md"))
                 .build();
-        // hook 顺序决定 BEFORE_AGENT 执行顺序，AGENTS.md 先刷新，skills 随后 reload。
+
         var builder = ReactAgent.builder()
                 .name("Agent智能体")
                 .model(chatModel)
                 .systemPrompt(buildSystemPrompt(cwd))
                 .methodTools((Object[]) toolService.getTools())
                 .saver(saver)
+                .tools(AgentTool.getFunctionToolCallback(webSearchAgent))
                 .interceptors(toolStatusInterceptor)
                 .hooks(List.of(agentMdHook, skillsHook));
         // 合并 MCP 工具
